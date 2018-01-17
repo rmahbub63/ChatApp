@@ -32,18 +32,9 @@ public class MainActivity extends AppCompatActivity {
         getSupportActionBar().setTitle("Chat App");
     }
 
-    @Override
-    public void onStart() {
-        super.onStart();
-        // Check if user is signed in (non-null) and update UI accordingly.
-        FirebaseUser currentUser = mAuth.getCurrentUser();
-        Log.d(TAG, "onStart: Current User: " + currentUser);
-        updateUI(currentUser);
-    }
-
     private void updateUI(FirebaseUser currentUser) {
         if (currentUser == null){
-            Intent startIntent = new Intent(MainActivity.this, StartActivity.class);
+            Intent startIntent = new Intent(MainActivity.this, LoginActivity.class);
             startActivity(startIntent);
             finish();
         }

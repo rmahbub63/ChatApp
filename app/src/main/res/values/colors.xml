@@ -5,4 +5,5 @@
     <color name="colorAccent">#ff5521</color>
     <color name="darkColor">#222222</color>
     <color name="buttonTextColor">#fff</color>
+    <color name="custom_theme_color">#FAFFFE</color>
 </resources>
