@@ -87,7 +87,14 @@ public class StartActivity extends AppCompatActivity implements LoaderCallbacks<
         mEmailSignInButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
-//                attemptLogin();
+                attemptLogin();
+            }
+        });
+
+        Button mRegistrationButton = (Button) findViewById(R.id.dont_have_account_button);
+        mRegistrationButton.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
                 Intent regIntent = new Intent(StartActivity.this, RegisterActivity.class);
                 startActivity(regIntent);
             }
@@ -101,7 +108,6 @@ public class StartActivity extends AppCompatActivity implements LoaderCallbacks<
         if (!mayRequestContacts()) {
             return;
         }
-
         getLoaderManager().initLoader(0, null, this);
     }
 
@@ -200,7 +206,7 @@ public class StartActivity extends AppCompatActivity implements LoaderCallbacks<
 
     private boolean isPasswordValid(String password) {
         //TODO: Replace this with your own logic
-        return password.length() > 4;
+        return password.length() > 6;
     }
 
     /**

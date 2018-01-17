@@ -17,6 +17,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
+        android:layout_gravity="center"
         android:visibility="gone" />
 
     <ScrollView
@@ -39,7 +40,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Create a New Account"
-                android:textSize="30sp"
+                android:textSize="20sp"
                 style="@style/Base.TextAppearance.AppCompat.Large"/>
 
             <android.support.design.widget.TextInputLayout
@@ -97,7 +98,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:text="@string/action_register"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:textColor="#fff"
+                android:background="@color/colorPrimaryDark"/>
 
         </LinearLayout>
     </ScrollView>

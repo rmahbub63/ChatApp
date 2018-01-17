@@ -1,5 +1,7 @@
 package com.example.mahbub.chatapp;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.annotation.TargetApi;
 import android.app.LoaderManager;
 import android.content.CursorLoader;
@@ -9,11 +11,13 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
+import android.support.v7.widget.Toolbar;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
@@ -26,14 +30,14 @@ import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.FirebaseAuthUserCollisionException;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import static android.Manifest.permission.READ_CONTACTS;
 
-public class RegisterActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor>  {
+public class RegisterActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor> {
 
     private static final String TAG = "RegisterActivity";
 
@@ -46,6 +50,9 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
     private AutoCompleteTextView mEmailView;
     private EditText mDisplayName, mPasswordView;
     private Button mCreateButton;
+    private Toolbar mToolbar;
+    private View mProgressView;
+    private View mRegisterFormView;
 
     // Firebase Authentication
     private FirebaseAuth mAuth;
@@ -63,6 +70,13 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
         mEmailView = findViewById(R.id.register_email);
         mPasswordView = findViewById(R.id.register_password);
         mCreateButton = findViewById(R.id.register_create_account_button);
+        mProgressView = findViewById(R.id.registration_progress);
+        mRegisterFormView = findViewById(R.id.register_form);
+        // Toolbar Set
+        mToolbar = findViewById(R.id.register_toolbar);
+        setSupportActionBar(mToolbar);
+        getSupportActionBar().setTitle("Create Account");
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
         populateAutoComplete();
 
@@ -72,17 +86,53 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
                 String displayName = mDisplayName.getText().toString().trim();
                 String email = mEmailView.getText().toString().trim();
                 String password = mPasswordView.getText().toString();
-                registerNewUser(displayName, email, password);
+                if (checkValidity(displayName, email, password)) {
+                    showProgress(true);
+                    registerNewUser(displayName, email, password);
+                }
             }
         });
-
     }
+
+    private boolean checkValidity(String displayName, String email, String password) {
+        View focusView = null;
+        String EMAIL_REGEX = "^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\])|(([a-zA-Z\\-0-9]+\\.)+[a-zA-Z]{2,}))$";
+        // Check for valid display name
+        if (TextUtils.isEmpty(displayName)) {
+            mDisplayName.setError(getString(R.string.error_field_required));
+            focusView = mDisplayName;
+            focusView.requestFocus();
+            return false;
+        }
+        // Check for a valid email address.
+        if (TextUtils.isEmpty(email)) {
+            mEmailView.setError(getString(R.string.error_field_required));
+            focusView = mEmailView;
+            focusView.requestFocus();
+            return false;
+        } else if (!email.matches(EMAIL_REGEX)) {
+            mEmailView.setError(getString(R.string.error_invalid_email));
+            focusView = mEmailView;
+            focusView.requestFocus();
+            return false;
+        }
+        // Check for a valid password, if the user entered one.
+        if (TextUtils.isEmpty(password) || password.length() < 6) {
+            mPasswordView.setError(getString(R.string.error_invalid_password));
+            focusView = mPasswordView;
+            focusView.requestFocus();
+            return false;
+        }
+        return true;
+    }
+
 
     private void registerNewUser(String displayName, String email, String password) {
         mAuth.createUserWithEmailAndPassword(email, password)
                 .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
                     @Override
                     public void onComplete(@NonNull Task<AuthResult> task) {
+                        showProgress(false);
                         if (task.isSuccessful()) {
                             // Sign in success, update UI with the signed-in user's information
                             Log.d(TAG, "createUserWithEmail:success");
@@ -90,10 +140,13 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
                             startActivity(mainIntent);
                             finish();
                         } else {
-                            // If sign in fails, display a message to the user.
-                            Log.w(TAG, "createUserWithEmail:failure", task.getException());
-                            Toast.makeText(RegisterActivity.this, "Authentication failed.",
-                                    Toast.LENGTH_SHORT).show();
+                            if (task.getException() instanceof FirebaseAuthUserCollisionException) {
+                                // If same email, display a message to the user.
+                                Toast.makeText(RegisterActivity.this, "You are already registered", Toast.LENGTH_SHORT).show();
+                            } else {
+                                // If sign in fails, display a message to the user.
+                                Toast.makeText(RegisterActivity.this, task.getException().getMessage(), Toast.LENGTH_SHORT).show();
+                            }
                         }
                     }
                 });
@@ -127,6 +180,42 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
             requestPermissions(new String[]{READ_CONTACTS}, REQUEST_READ_CONTACTS);
         }
         return false;
+    }
+
+    /**
+     * Shows the progress UI and hides the login form.
+     */
+    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)
+    private void showProgress(final boolean show) {
+        // On Honeycomb MR2 we have the ViewPropertyAnimator APIs, which allow
+        // for very easy animations. If available, use these APIs to fade-in
+        // the progress spinner.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR2) {
+            int shortAnimTime = getResources().getInteger(android.R.integer.config_shortAnimTime);
+
+            mRegisterFormView.setVisibility(show ? View.GONE : View.VISIBLE);
+            mRegisterFormView.animate().setDuration(shortAnimTime).alpha(
+                    show ? 0 : 1).setListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    mRegisterFormView.setVisibility(show ? View.GONE : View.VISIBLE);
+                }
+            });
+
+            mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
+            mProgressView.animate().setDuration(shortAnimTime).alpha(
+                    show ? 1 : 0).setListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
+                }
+            });
+        } else {
+            // The ViewPropertyAnimator APIs are not available, so simply show
+            // and hide the relevant UI components.
+            mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
+            mRegisterFormView.setVisibility(show ? View.GONE : View.VISIBLE);
+        }
     }
 
     @Override
