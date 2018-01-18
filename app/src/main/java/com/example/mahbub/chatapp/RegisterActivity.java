@@ -9,10 +9,12 @@ import android.content.Intent;
 import android.content.Loader;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.ContactsContract;
+import android.provider.MediaStore;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
@@ -24,22 +26,40 @@ import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthUserCollisionException;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageReference;
+import com.google.firebase.storage.UploadTask;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+
+import de.hdodenhof.circleimageview.CircleImageView;
 
 import static android.Manifest.permission.READ_CONTACTS;
 
 public class RegisterActivity extends AppCompatActivity implements LoaderManager.LoaderCallbacks<Cursor> {
 
     private static final String TAG = "RegisterActivity";
+
+    /**
+     * Id to identity  CHOOSE_IMAGE request.
+     */
+    private static final int CHOOSE_IMAGE = 101;
 
     /**
      * Id to identity READ_CONTACTS permission request.
@@ -49,13 +69,22 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
     // UI references.
     private AutoCompleteTextView mEmailView;
     private EditText mDisplayName, mPasswordView;
+    private TextView mImagePrompText;
     private Button mCreateButton;
     private Toolbar mToolbar;
     private View mProgressView;
     private View mRegisterFormView;
+    private CircleImageView circleImageView;
+    private String profileImageUrl;
+    private Uri uriProfileImage;
+
 
     // Firebase Authentication
     private FirebaseAuth mAuth;
+    // Firebase Database
+    private FirebaseDatabase mDatabase;
+    private DatabaseReference mDatabaseReference;
+    private StorageReference profileImageRef;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,6 +93,9 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
 
         // Firebase Authentication
         mAuth = FirebaseAuth.getInstance();
+        // Firebase Database
+        mDatabase = FirebaseDatabase.getInstance();
+        profileImageRef = FirebaseStorage.getInstance().getReference("profilepics/" + System.currentTimeMillis() + ".jpg");
 
         // Set up the login form.
         mDisplayName = findViewById(R.id.register_display_name);
@@ -72,6 +104,10 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
         mCreateButton = findViewById(R.id.register_create_account_button);
         mProgressView = findViewById(R.id.registration_progress);
         mRegisterFormView = findViewById(R.id.register_form);
+        mImagePrompText = findViewById(R.id.image_prompt_text);
+
+        circleImageView = findViewById(R.id.register_image);
+        circleImageView.setImageResource(R.drawable.image_add);
         // Toolbar Set
         mToolbar = findViewById(R.id.register_toolbar);
         setSupportActionBar(mToolbar);
@@ -79,6 +115,13 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
         populateAutoComplete();
+
+        circleImageView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                openImageChooser();
+            }
+        });
 
         mCreateButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -123,22 +166,47 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
             focusView.requestFocus();
             return false;
         }
+        // check for image
+        if (profileImageUrl == null) {
+            Toast.makeText(RegisterActivity.this, "Please add an image", Toast.LENGTH_SHORT).show();
+            return false;
+        }
         return true;
     }
 
 
-    private void registerNewUser(String displayName, String email, String password) {
+    private void registerNewUser(final String displayName, String email, String password) {
         mAuth.createUserWithEmailAndPassword(email, password)
                 .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
                     @Override
                     public void onComplete(@NonNull Task<AuthResult> task) {
-                        showProgress(false);
                         if (task.isSuccessful()) {
                             // Sign in success, update UI with the signed-in user's information
-                            Log.d(TAG, "createUserWithEmail:success");
-                            Intent mainIntent = new Intent(RegisterActivity.this, MainActivity.class);
-                            startActivity(mainIntent);
-                            finish();
+                            FirebaseUser currentUser = mAuth.getCurrentUser();
+                            String uid = currentUser.getUid();
+                            mDatabaseReference = mDatabase.getReference().child("Users").child(uid);
+
+                            HashMap<String, String> userMap = new HashMap<>();
+                            userMap.put("name", displayName);
+                            userMap.put("status", "Hi there, I'm using this Chat App");
+                            userMap.put("image", profileImageUrl);
+                            userMap.put("thumb_image", "default");
+
+                            mDatabaseReference.setValue(userMap).addOnCompleteListener(new OnCompleteListener<Void>() {
+                                @Override
+                                public void onComplete(@NonNull Task<Void> task) {
+                                    showProgress(false);
+                                    if (task.isSuccessful()) {
+                                        Log.d(TAG, "createUserWithEmail:success");
+                                        Intent mainIntent = new Intent(RegisterActivity.this, MainActivity.class);
+                                        startActivity(mainIntent);
+                                        finish();
+                                    } else {
+                                        // If sign in fails, display a message to the user.
+                                        Toast.makeText(RegisterActivity.this, task.getException().getMessage(), Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                            });
                         } else {
                             if (task.getException() instanceof FirebaseAuthUserCollisionException) {
                                 // If same email, display a message to the user.
@@ -261,6 +329,59 @@ public class RegisterActivity extends AppCompatActivity implements LoaderManager
         mEmailView.setAdapter(adapter);
     }
 
+    /* Choose an image from Gallery */
+    void openImageChooser() {
+        Intent intent = new Intent();
+        intent.setType("image/*");
+        intent.setAction(Intent.ACTION_GET_CONTENT);
+        startActivityForResult(Intent.createChooser(intent, "Select Picture"), CHOOSE_IMAGE);
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (resultCode == RESULT_OK) {
+            if (requestCode == CHOOSE_IMAGE) {
+                // Get the url from data
+                uriProfileImage = data.getData();
+                if (null != uriProfileImage) {
+                    // Set the image in ImageView
+                    try {
+                        Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), uriProfileImage);
+                        circleImageView.setImageBitmap(bitmap);
+                        uploadImageToFirebase();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+    }
+
+    /* upload image to firebase storage */
+    public void uploadImageToFirebase() {
+        if (uriProfileImage != null) {
+            // Showing progress dialog at user registration time.
+            showProgress(true);
+
+            profileImageRef.putFile(uriProfileImage).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+                @Override
+                public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                    // Hiding the progress dialog after all task complete.
+                    showProgress(false);
+                    mImagePrompText.setVisibility(View.INVISIBLE);
+                    profileImageUrl = taskSnapshot.getDownloadUrl().toString();
+                }
+            })
+                    .addOnFailureListener(new OnFailureListener() {
+                        @Override
+                        public void onFailure(@NonNull Exception e) {
+                            // Hiding the progress dialog after all task complete.
+                            showProgress(false);
+
+                            Toast.makeText(RegisterActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
+        }
+    }
 
     private interface ProfileQuery {
         String[] PROJECTION = {
